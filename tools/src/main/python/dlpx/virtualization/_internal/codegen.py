@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2019 by Delphix. All rights reserved.
+# Copyright (c) 2019, 2020 by Delphix. All rights reserved.
 #
 
 import copy
@@ -10,7 +10,7 @@ import os
 import shutil
 import subprocess
 
-from dlpx.virtualization._internal import exceptions, file_util, util_classes
+from dlpx.virtualization._internal import const, exceptions, file_util
 
 logger = logging.getLogger(__name__)
 UNKNOWN_ERR = 'UNKNOWN_ERR'
@@ -24,24 +24,6 @@ SWAGGER_JSON_FORMAT = {
     },
     'paths': {},
     'definitions': {}
-}
-
-#
-# The default snapshot params we currently support. This is so that in the
-# future when we want to support plugin author defined schemas for snapshot
-# params the upgrade case will be relatively simple.
-#
-
-SNAPSHOT_PARAMS_JSON = {
-    'snapshotParametersDefinition': {
-        'type': 'object',
-        'additionalProperties': False,
-        'properties': {
-            'resync': {
-                'type': 'boolean'
-            }
-        }
-    }
 }
 
 SWAGGER_FILE_NAME = 'swagger.json'
@@ -77,7 +59,7 @@ def generate_python(name, source_dir, plugin_config_dir, schema_content):
     # relevant to the plugin writer. We want to always force this to be
     # recreated.
     #
-    output_dir = os.path.join(plugin_config_dir, util_classes.OUTPUT_DIR_NAME)
+    output_dir = os.path.join(plugin_config_dir, const.OUTPUT_DIR_NAME)
     logger.info('Creating new output directory: {}'.format(output_dir))
     file_util.make_dir(output_dir, True)
 
@@ -111,9 +93,7 @@ def generate_python(name, source_dir, plugin_config_dir, schema_content):
 def _write_swagger_file(name, schema_dict, output_dir):
     swagger_json = copy.deepcopy(SWAGGER_JSON_FORMAT)
     swagger_json['info']['title'] = name
-    swagger_json['definitions'] = copy.deepcopy(schema_dict)
-    # Add in the snapshot param definition
-    swagger_json['definitions'].update(SNAPSHOT_PARAMS_JSON)
+    swagger_json['definitions'] = schema_dict
 
     swagger_file = os.path.join(output_dir, SWAGGER_FILE_NAME)
     logger.info('Writing swagger file to {}'.format(swagger_file))

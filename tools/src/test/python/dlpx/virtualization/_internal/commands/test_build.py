@@ -1,14 +1,15 @@
 #
-# Copyright (c) 2019 by Delphix. All rights reserved.
+# Copyright (c) 2019, 2020 by Delphix. All rights reserved.
 #
 
 import json
 import os
 
 import yaml
-from dlpx.virtualization._internal import exceptions, util_classes
+from dlpx.virtualization._internal import const, exceptions
 from dlpx.virtualization._internal.commands import build
-from dlpx.virtualization._internal.plugin_validator import PluginValidator
+from dlpx.virtualization._internal.commands import initialize as init
+from dlpx.virtualization._internal.plugin_importer import PluginImporter
 
 import mock
 import pytest
@@ -48,6 +49,9 @@ class TestBuild:
                                                      gen_py.plugin_content_dir,
                                                      gen_py.schema_dict)
         mock_plugin_manifest.assert_called()
+        mock_install_deps.assert_called()
+        mock_relative_path.assert_called()
+
         # After running build this file should now exist.
         assert os.path.exists(artifact_file)
 
@@ -57,18 +61,43 @@ class TestBuild:
         assert content == artifact_content
 
     @staticmethod
+    @pytest.mark.parametrize('ingestion_strategy',
+                             [const.DIRECT_TYPE, const.STAGED_TYPE])
+    @pytest.mark.parametrize('host_type',
+                             [const.UNIX_HOST_TYPE, const.WINDOWS_HOST_TYPE])
+    @mock.patch(
+        'dlpx.virtualization._internal.plugin_dependency_util.install_deps')
+    @mock.patch('os.path.isabs', return_value=False)
+    def test_build_success_from_init(mock_relative_path, mock_install_deps,
+                                     tmpdir, ingestion_strategy, host_type,
+                                     plugin_name, artifact_file):
+        # Initialize an empty directory.
+        init.init(tmpdir.strpath, ingestion_strategy, plugin_name, host_type)
+        plugin_config_file = os.path.join(
+            tmpdir.strpath, init.DEFAULT_PLUGIN_CONFIG_FILE)
+        # Before running build assert that the artifact file does not exist.
+        assert not os.path.exists(artifact_file)
+
+        build.build(plugin_config_file, artifact_file, False, False)
+
+        mock_relative_path.assert_called()
+        mock_install_deps.assert_called()
+
+        assert os.path.exists(artifact_file)
+
+    @staticmethod
     @pytest.mark.parametrize('artifact_filename', ['somefile.json'])
-    @mock.patch.object(PluginValidator,
-                       '_PluginValidator__import_plugin',
+    @mock.patch.object(PluginImporter,
+                       '_PluginImporter__internal_import',
                        return_value=({}, None))
     @mock.patch('dlpx.virtualization._internal.codegen.generate_python')
     @mock.patch(
         'dlpx.virtualization._internal.plugin_dependency_util.install_deps')
     @mock.patch('os.path.isabs', return_value=False)
     def test_build_success_non_default_output_file(
-        mock_relative_path, mock_install_deps, mock_generate_python,
-        mock_import_plugin, plugin_config_file, artifact_file,
-        artifact_content, codegen_gen_py_inputs):
+            mock_relative_path, mock_install_deps, mock_generate_python,
+            mock_import_plugin, plugin_config_file, artifact_file,
+            artifact_content, codegen_gen_py_inputs):
         gen_py = codegen_gen_py_inputs
 
         # Before running build assert that the artifact file does not exist.
@@ -217,9 +246,9 @@ class TestBuild:
         'dlpx.virtualization._internal.plugin_dependency_util.install_deps')
     @mock.patch('os.path.isabs', return_value=False)
     def test_build_generate_artifact_fail(
-        mock_relative_path, mock_install_deps, mock_generate_python,
-        mock_plugin_manifest, mock_gen_artifact, plugin_config_file,
-        artifact_file, codegen_gen_py_inputs):
+            mock_relative_path, mock_install_deps, mock_generate_python,
+            mock_plugin_manifest, mock_gen_artifact, plugin_config_file,
+            artifact_file, codegen_gen_py_inputs):
         gen_py = codegen_gen_py_inputs
 
         # Before running build assert that the artifact file does not exist.
@@ -284,13 +313,13 @@ class TestBuild:
         assert actual_discovery_definition == discovery_definition
 
     @staticmethod
-    def test_prepare_upload_artifact_success(basic_artifact_content,
+    def test_prepare_upload_artifact_success(artifact_content,
                                              plugin_config_content, src_dir,
                                              schema_content):
         upload_artifact = build.prepare_upload_artifact(
             plugin_config_content, src_dir, schema_content, {})
 
-        assert upload_artifact == basic_artifact_content
+        assert upload_artifact == artifact_content
 
     @staticmethod
     def test_generate_upload_artifact_success(tmpdir, artifact_content):
@@ -321,7 +350,7 @@ class TestBuild:
     @staticmethod
     @mock.patch('compileall.compile_dir')
     def test_zip_and_encode_source_files_compileall_fail(
-        mock_compile, src_dir):
+            mock_compile, src_dir):
         mock_compile.return_value = 0
         with pytest.raises(exceptions.UserError) as err_info:
             build.zip_and_encode_source_files(src_dir)
@@ -342,25 +371,22 @@ class TestBuild:
                            ''.format(src_dir, 'something'))
 
     @staticmethod
-    @mock.patch.object(PluginValidator,
-                       '_PluginValidator__import_plugin',
+    @mock.patch.object(PluginImporter,
+                       '_PluginImporter__internal_import',
                        return_value=({}, None))
     @mock.patch(
         'dlpx.virtualization._internal.plugin_dependency_util.install_deps')
     @mock.patch('os.path.isabs', return_value=False)
-    @pytest.mark.parametrize(('plugin_id', 'skip_id_validation'),
-                             [('77f18ce4-4425-4cd6-b9a7-23653254d660', False),
-                              ('77f18ce4-4425-4cd6-b9a7-23653254d660', True),
-                              ('mongo', True)])
+    @pytest.mark.parametrize('plugin_id',
+                             ['77f18ce4-4425-4cd6-b9a7-23653254d660'])
     def test_id_validation_positive(mock_relative_path, mock_install_deps,
                                     mock_import_plugin, plugin_config_file,
-                                    artifact_file, skip_id_validation):
-        build.build(plugin_config_file, artifact_file, False,
-                    skip_id_validation)
+                                    artifact_file):
+        build.build(plugin_config_file, artifact_file, False)
 
     @staticmethod
-    @mock.patch.object(PluginValidator,
-                       '_PluginValidator__import_plugin',
+    @mock.patch.object(PluginImporter,
+                       '_PluginImporter__internal_import',
                        return_value=({}, None))
     @pytest.mark.parametrize('plugin_id', ['mongo'])
     def test_id_validation_negative(mock_import_plugin, plugin_config_file,
@@ -433,16 +459,17 @@ class TestPluginUtil:
         assert not mock_generate_python.called
 
     @staticmethod
-    @pytest.mark.parametrize('src_dir', ['/not/a/real/dir/src'])
+    @pytest.mark.parametrize('src_dir', [os.path.join('fake', 'dir')])
     @mock.patch('os.path.isabs', return_value=False)
     @mock.patch('dlpx.virtualization._internal.codegen.generate_python')
     def test_plugin_no_src_dir(mock_generate_python, mock_path_is_relative,
-                               plugin_config_file, artifact_file):
+                               plugin_config_file, artifact_file, tmpdir):
         with pytest.raises(exceptions.UserError) as err_info:
             build.build(plugin_config_file, artifact_file, False, False)
 
         message = err_info.value.message
-        assert message == "The path '/not/a/real/dir/src' does not exist."
+        assert message == "The path '{}' does not exist.".format(
+            tmpdir.join(os.path.join('fake', 'dir')).strpath)
 
         assert not mock_generate_python.called
 
@@ -500,7 +527,17 @@ class TestPluginUtil:
                                         plugin_config_file, artifact_file,
                                         schema_file):
         # Make it so we can't read the file
-        os.chmod(schema_file, 0000)
+        if os.name == 'nt':
+            pytest.skip(
+                'skipping this test on windows as os.chmod has issues removing'
+                ' permissions on file')
+            #
+            # The schema_file can be made unreadable on windows using pypiwin32 but
+            # since it adds dependency on pypiwin32 for the sdk, skipping this test
+            # instead of potentially destabilizing the sdk by adding this dependency.
+            #
+        else:
+            os.chmod(schema_file, 0000)
         with pytest.raises(exceptions.UserError) as err_info:
             build.build(plugin_config_file, artifact_file, False, False)
 
@@ -627,14 +664,127 @@ class TestPluginUtil:
             'manualSourceConfigDiscovery']
 
     @staticmethod
-    def test_plugin_config_schemas_diff():
-        with open(util_classes.PLUGIN_CONFIG_SCHEMA) as f:
-            config_schema = json.load(f)
+    @pytest.mark.parametrize('build_number, expected', [
+        pytest.param('0.0.1', '0.0.1'),
+        pytest.param('0.1.0', '0.1'),
+        pytest.param('1.0.01.0', '1.0.1')
+    ])
+    def test_build_number_parameter(plugin_config_content, src_dir,
+                                    schema_content, expected):
 
-        with open(util_classes.PLUGIN_CONFIG_SCHEMA_NO_ID_VALIDATION) as f:
-            config_schema_no_id = json.load(f)
+        upload_artifact = build.prepare_upload_artifact(
+            plugin_config_content, src_dir, schema_content, {})
 
-        # Only the id's pattern should be different so remove it.
-        config_schema['properties']['id'].pop('pattern')
+        assert expected == upload_artifact['buildNumber']
 
-        assert config_schema == config_schema_no_id
+    @staticmethod
+    @pytest.mark.parametrize('extended_start_stop_hooks, expected', [
+        pytest.param(True, True),
+        pytest.param(False, False),
+        pytest.param(None, False),
+    ])
+    def test_extended_hooks_parameter(plugin_config_content, src_dir,
+                                      schema_content, expected):
+        upload_artifact = build.prepare_upload_artifact(
+            plugin_config_content, src_dir, schema_content, {})
+        assert expected == upload_artifact.get('extendedStartStopHooks')
+
+    @staticmethod
+    @pytest.mark.parametrize('lua_name, expected', [
+        pytest.param('lua-toolkit-1', 'lua-toolkit-1'),
+        pytest.param('nix_staged_python', 'nix_staged_python')
+    ])
+    def test_lua_name_parameter(plugin_config_content, src_dir, schema_content,
+                                expected):
+        upload_artifact = build.prepare_upload_artifact(
+            plugin_config_content, src_dir, schema_content, {})
+        assert expected == upload_artifact.get('luaName')
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        'minimum_lua_version, expected',
+        [pytest.param('2.3', '2.3'),
+         pytest.param('2.4', '2.4')])
+    def test_minimum_lua_version_parameter(plugin_config_content, src_dir,
+                                           schema_content, expected):
+        upload_artifact = build.prepare_upload_artifact(
+            plugin_config_content, src_dir, schema_content, {})
+        assert expected == upload_artifact.get('minimumLuaVersion')
+
+    @staticmethod
+    @pytest.mark.parametrize('build_number', ['1.0.1'])
+    def test_build_change_and_build_again(plugin_config_content, src_dir,
+                                          schema_content):
+        upload_artifact = build.prepare_upload_artifact(
+            plugin_config_content, src_dir, schema_content, {})
+        assert plugin_config_content['buildNumber'] == upload_artifact['buildNumber']
+        changed_build_number = '7.2.12'
+        changed_host_type = ['WINDOWS']
+        plugin_config_content['buildNumber'] = changed_build_number
+        plugin_config_content['hostTypes'] = changed_host_type
+        upload_artifact_2 = build.prepare_upload_artifact(
+            plugin_config_content, src_dir, schema_content, {})
+        assert changed_build_number == upload_artifact_2.get('buildNumber')
+        assert changed_host_type == upload_artifact_2.get('hostTypes')
+
+    @staticmethod
+    @pytest.mark.parametrize('repository_definition',
+                             [{
+                                 'type': 'object',
+                                 'properties': {
+                                     'name': {
+                                         'type': 'badDataType'
+                                     }
+                                 },
+                                 'nameField': 'name',
+                                 'identityFields': ['name']
+                             }])
+    @mock.patch('dlpx.virtualization._internal.codegen.generate_python')
+    def test_bad_data_type_in_schema(mock_generate_python,
+                                     plugin_config_file,
+                                     artifact_file):
+        with pytest.raises(exceptions.UserError) as err_info:
+            build.build(plugin_config_file, artifact_file, False, False)
+
+        message = err_info.value.message
+        exp_error = "'badDataType' is not valid under any of the given schemas"
+        assert exp_error in message
+
+        assert not mock_generate_python.called
+
+    @staticmethod
+    @pytest.mark.parametrize('host_types', [''])
+    @mock.patch('dlpx.virtualization._internal.codegen.generate_python')
+    def test_empty_host_type(mock_generate_python, plugin_config_file,
+                             artifact_file):
+        with pytest.raises(exceptions.UserError) as err_info:
+            build.build(plugin_config_file, artifact_file, False, False)
+
+        message = err_info.value.message
+        assert "Validation failed" in message
+        assert not mock_generate_python.called
+
+    @staticmethod
+    @pytest.mark.parametrize('plugin_name', [''])
+    @mock.patch('dlpx.virtualization._internal.codegen.generate_python')
+    def test_empty_plugin_name(mock_generate_python, plugin_config_file,
+                               artifact_file):
+        with pytest.raises(exceptions.UserError) as err_info:
+            build.build(plugin_config_file, artifact_file, False, False)
+
+        message = err_info.value.message
+        assert "Validation failed" in message
+        assert not mock_generate_python.called
+
+    @staticmethod
+    @mock.patch('os.path.isabs', return_value=False)
+    def test_non_existing_entry_file(mock_relative_path, plugin_config_file,
+                                     plugin_config_content, artifact_file):
+        entry_module, _ = plugin_config_content['entryPoint'].split(':')
+
+        with pytest.raises(exceptions.UserError) as err_info:
+            build.build(plugin_config_file, artifact_file, False, False)
+
+        message = err_info.value.message
+        exp_message = "No module named {module}".format(module=entry_module)
+        assert exp_message in message
