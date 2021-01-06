@@ -10,6 +10,7 @@ theme:
   font:
     text: Helvetica Neue
     code: Ubuntu Mono
+  feature:
 
 copyright: Copyright &copy; 2019 Delphix Corp.
 
