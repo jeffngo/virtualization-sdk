@@ -9,7 +9,11 @@ on:
       - 'release/**'
     paths:
       - 'dvp/src/main/python/dlpx/virtualization/VERSION'
-
+    workflow_dispatch:
+      inputs:
+      git-ref:
+        description: Git Ref (Optional)    
+        required: false
 jobs:
   publish:
     runs-on: ubuntu-latest
