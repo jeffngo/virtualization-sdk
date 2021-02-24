@@ -1,7 +1,15 @@
 name: Publish Python packages to Test PyPi
 
 on:
-    workflow_dispatch:
+  workflow_dispatch:
+  # Run on push when the version file has changed on selected branches.
+  push:
+    branches:
+      - master
+      - develop
+      - 'release/**'
+    paths:
+      - 'dvp/src/main/python/dlpx/virtualization/VERSION'
 
 jobs:
   publish:
