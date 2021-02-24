@@ -1,19 +1,8 @@
 name: Publish Python packages to Test PyPi
 
 on:
-  # Run on push when the version file has changed on selected branches.
-  push:
-    branches:
-      - master
-      - develop
-      - 'release/**'
-    paths:
-      - 'dvp/src/main/python/dlpx/virtualization/VERSION'
     workflow_dispatch:
-      inputs:
-      git-ref:
-        description: Git Ref (Optional)    
-        required: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
